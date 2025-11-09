@@ -1,5 +1,5 @@
 # buf
-![Logo](res/logo.png)
+![logo](res/logo.png)
 buf is a command-line utility for flashing ISOs to create bootable USB drives
 
 Is it Bryson's USB Flasher or Bootable USB Flasher?
