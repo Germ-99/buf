@@ -1,0 +1,113 @@
+#ifndef BUF_H
+#define BUF_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mount.h>
+#include <errno.h>
+#include <time.h>
+#include <dirent.h>
+#include <sys/statvfs.h>
+#include <ctype.h>
+#include <signal.h>
+
+#define VERSION "1.0.0"
+#define APP_NAME "buf"
+#define DEFAULT_FS_LABEL "BOOTABLE USB"
+#define MAX_PATH 4096
+#define MAX_DEVICES 64
+#define BUFFER_SIZE (5 * 1024 * 1024)
+#define FAT32_MAX_FILESIZE 4294967295ULL
+
+typedef enum {
+    MODE_NONE,
+    MODE_WIPE,
+    MODE_PARTITION
+} InstallMode;
+
+typedef enum {
+    FS_FAT,
+    FS_NTFS
+} FilesystemType;
+
+typedef enum {
+    ISO_UNKNOWN,
+    ISO_WINDOWS,
+    ISO_LINUX,
+    ISO_OTHER
+} ISOType;
+
+typedef struct {
+    InstallMode mode;
+    char source[MAX_PATH];
+    char target[MAX_PATH];
+    char target_device[MAX_PATH];
+    char target_partition[MAX_PATH];
+    FilesystemType filesystem;
+    char label[256];
+    int verbose;
+    ISOType iso_type;
+} Config;
+
+typedef struct {
+    char source_mountpoint[MAX_PATH];
+    char target_mountpoint[MAX_PATH];
+    char temp_directory[MAX_PATH];
+} MountPoints;
+
+int check_root_privileges(void);
+int parse_arguments(int argc, char *argv[], Config *config);
+void print_usage(const char *program_name);
+void print_version(void);
+void print_colored(const char *text, const char *color);
+int list_removable_devices(void);
+
+int check_dependencies(void);
+int check_source_media(const char *source);
+int check_target_media(const char *target, InstallMode mode);
+int determine_target_parameters(Config *config);
+ISOType detect_iso_type(const char *source_mountpoint);
+
+int is_device_busy(const char *device);
+int unmount_device(const char *device);
+
+int create_mountpoints(MountPoints *mounts);
+int mount_source(const char *source, const char *mountpoint);
+int mount_target(const char *target, const char *mountpoint);
+
+int wipe_device(const char *device);
+int create_partition_table(const char *device);
+int create_partition(const char *device, const char *partition, FilesystemType fs_type, const char *label);
+int create_uefi_ntfs_partition(const char *device);
+int install_uefi_ntfs(const char *partition, const char *temp_dir);
+
+unsigned long long get_directory_size(const char *path);
+unsigned long long get_free_space(const char *path);
+int check_fat32_limitation(const char *source_mountpoint, FilesystemType *fs_type);
+int check_free_space(const char *source_mountpoint, const char *target_mountpoint, const char *target_partition);
+
+int copy_filesystem_files(const char *source, const char *target, int verbose);
+int copy_file(const char *source, const char *target);
+int copy_directory_recursive(const char *source, const char *target, int verbose);
+
+int install_grub(const char *target_mountpoint, const char *target_device);
+int install_grub_config(const char *target_mountpoint);
+int workaround_win7_uefi(const char *source_mountpoint, const char *target_mountpoint);
+
+int cleanup_mountpoint(const char *mountpoint);
+void cleanup(MountPoints *mounts, const char *target_media);
+
+int run_command(const char *command);
+int run_command_with_output(const char *command, char *output, size_t output_size);
+char *trim_whitespace(char *str);
+int file_exists(const char *path);
+int is_block_device(const char *path);
+int is_directory(const char *path);
+int make_directory(const char *path);
+void make_system_realize_partition_changed(const char *device);
+
+#endif
