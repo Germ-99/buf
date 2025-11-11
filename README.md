@@ -6,6 +6,9 @@ Is it Bryson's USB Flasher or Bootable USB Flasher?
 
 logo by my good friend [mia](https://github.com/marshmallow-mia). Go check her github out, she's cool :)
 
+**NOTE**:
+This is only for Linux, (at the moment) adding windows support soon :)
+
 # Installing
 Run the following command:
 ```
