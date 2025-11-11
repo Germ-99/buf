@@ -18,10 +18,10 @@
 #define VERSION "1.0.0"
 #define APP_NAME "buf"
 #define DEFAULT_FS_LABEL "BOOTABLE USB"
-#define MAX_PATH 4096
+#define MAX_PATH 4096 // Max path length for linux filesystems... sigh
 #define MAX_DEVICES 64
-#define BUFFER_SIZE (5 * 1024 * 1024)
-#define FAT32_MAX_FILESIZE 4294967295ULL
+#define BUFFER_SIZE (5 * 1024 * 1024) // 5MB buffer for IO crap
+#define FAT32_MAX_FILESIZE 4294967295ULL // 4GB - 1 byte, maximum size for FAT32
 
 typedef enum {
     MODE_NONE,

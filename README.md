@@ -12,7 +12,7 @@ This is only for Linux, (at the moment) adding windows support soon :)
 # Installing
 Run the following command:
 ```
-curl -fsSL https://raw.githubusercontent.com/Germ-99/buf/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Germ-99/buf/main/scripts/install.sh | bash
 ```
 
 # Building

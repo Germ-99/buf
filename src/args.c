@@ -3,6 +3,7 @@
 int parse_arguments(int argc, char *argv[], Config *config) {
     int i;
     int has_mode = 0;
+    int mode_count = 0;
     int has_source = 0;
     int has_target = 0;
     
@@ -32,12 +33,14 @@ int parse_arguments(int argc, char *argv[], Config *config) {
         if (strcmp(arg, "-w") == 0 || strcmp(arg, "--wipe") == 0) {
             config->mode = MODE_WIPE;
             has_mode = 1;
+            mode_count++;
             continue;
         }
         
         if (strcmp(arg, "-p") == 0 || strcmp(arg, "--partition") == 0) {
             config->mode = MODE_PARTITION;
             has_mode = 1;
+            mode_count++;
             continue;
         }
         
@@ -86,22 +89,49 @@ int parse_arguments(int argc, char *argv[], Config *config) {
         }
         
         fprintf(stderr, "Error: Unknown argument '%s'\n", arg);
+        fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
+        return -1;
+    }
+    
+    if (mode_count > 1) {
+        fprintf(stderr, "Error: Cannot use both --wipe and --partition modes\n");
+        fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
         return -1;
     }
     
     if (!has_mode) {
         fprintf(stderr, "Error: Installation mode not specified (use -w or -p)\n");
+        fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
         return -1;
     }
     
     if (!has_source) {
         fprintf(stderr, "Error: Source media not specified\n");
+        fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
         return -1;
     }
     
     if (!has_target) {
         fprintf(stderr, "Error: Target media not specified\n");
+        fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
         return -1;
+    }
+    
+    if (config->mode == MODE_WIPE) {
+        char response[10];
+        printf("\nWARNING: The --wipe/-w flag will erase ALL DATA on this device, are you sure you want to continue? Y/N: ");
+        fflush(stdout);
+        
+        if (fgets(response, sizeof(response), stdin) == NULL) {
+            fprintf(stderr, "\nError: Couldn't read input\n");
+            fprintf(stderr, "Run `sudo buf -h` for help on commands\n");
+            return -1;
+        }
+        
+        if (response[0] != 'Y' && response[0] != 'y') {
+            fprintf(stderr, "Operation cancelled by user\n");
+            return -1;
+        }
     }
     
     return 0;

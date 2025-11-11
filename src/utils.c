@@ -295,7 +295,7 @@ int list_removable_devices(void) {
     
     free(devices);
     
-    printf("\n\033[33mNote: Run 'sudo buf -w -s=<iso> -t=<device>' to create bootable USB\033[0m\n");
+    printf("\n\033[33mNote: Run 'sudo buf -h' for help with creating a bootable USB\033[0m\n");
     
     return 0;
 }
