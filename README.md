@@ -9,6 +9,8 @@ logo by my good friend [mia](https://github.com/marshmallow-mia). Go check her g
 **NOTE**:
 This is only for Linux, (at the moment) adding windows support soon :)
 
+OK, quick rant. I CANNOT FIGURE OUT HOW TO PORT THIS!!!>!!!!>>!>!. The windows API is absolute trash aswell as the documentation for it. Why such weird semantics??? Why??? Has I ever????
+
 # Installing
 Run the following command:
 ```
