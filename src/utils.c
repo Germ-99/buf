@@ -27,6 +27,7 @@ void print_usage(const char *program_name) {
     printf("Optional:\n");
     printf("  -l, --label=LABEL          Filesystem label (default: 'BOOTABLE USB')\n");
     printf("  -v, --verbose              Verbose output\n");
+    printf("  -nl, --no-log              Disable logging (no log file created)\n");
     printf("  -ls, --list                List all removable drives\n");
     printf("  --version                  Show version information\n");
     printf("  -h, --help                 Show this help message\n\n");

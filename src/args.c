@@ -49,6 +49,11 @@ int parse_arguments(int argc, char *argv[], Config *config) {
             continue;
         }
         
+        if (strcmp(arg, "-nl") == 0 || strcmp(arg, "--no-log") == 0) {
+            config->no_log = 1;
+            continue;
+        }
+        
         if (strncmp(arg, "-s=", 3) == 0 || strncmp(arg, "--source=", 9) == 0) {
             value = strchr(arg, '=') + 1;
             strncpy(config->source, value, sizeof(config->source) - 1);

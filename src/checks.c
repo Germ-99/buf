@@ -13,6 +13,7 @@ int check_dependencies(void) {
         snprintf(command, sizeof(command), "which %s >/dev/null 2>&1", required_commands[i]);
         if (run_command(command) != 0) {
             fprintf(stderr, "Error: Required command '%s' not found\n", required_commands[i]);
+            log_write(g_log_ctx, LOG_ERROR, "Required command not found: %s", required_commands[i]);
             missing = 1;
         }
     }
@@ -20,18 +21,21 @@ int check_dependencies(void) {
     snprintf(command, sizeof(command), "which mkdosfs >/dev/null 2>&1 || which mkfs.vfat >/dev/null 2>&1 || which mkfs.fat >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: FAT filesystem tools not found (install dosfstools)\n");
+        log_write(g_log_ctx, LOG_ERROR, "FAT filesystem tools not found (dosfstools required)");
         missing = 1;
     }
     
     snprintf(command, sizeof(command), "which mkntfs >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: NTFS filesystem tools not found (install ntfs-3g)\n");
+        log_write(g_log_ctx, LOG_ERROR, "NTFS filesystem tools not found (ntfs-3g required)");
         missing = 1;
     }
     
     snprintf(command, sizeof(command), "which grub-install >/dev/null 2>&1 || which grub2-install >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: GRUB not found (install grub2 or grub-pc)\n");
+        log_write(g_log_ctx, LOG_ERROR, "GRUB not found (grub2 or grub-pc required)");
         missing = 1;
     }
     
@@ -43,17 +47,20 @@ int check_source_media(const char *source) {
     
     if (!file_exists(source)) {
         fprintf(stderr, "Error: Source media '%s' not found\n", source);
+        log_write(g_log_ctx, LOG_ERROR, "Source media not found: %s", source);
         return -1;
     }
     
     if (!is_block_device(source)) {
         if (stat(source, &st) != 0) {
             fprintf(stderr, "Error: Cannot access source media '%s'\n", source);
+            log_write(g_log_ctx, LOG_ERROR, "Cannot access source media: %s", source);
             return -1;
         }
         
         if (!S_ISREG(st.st_mode)) {
             fprintf(stderr, "Error: Source must be a regular file or block device\n");
+            log_write(g_log_ctx, LOG_ERROR, "Source is not a regular file or block device: %s", source);
             return -1;
         }
     }
@@ -64,17 +71,20 @@ int check_source_media(const char *source) {
 int check_target_media(const char *target, InstallMode mode) {
     if (!is_block_device(target)) {
         fprintf(stderr, "Error: Target '%s' is not a block device\n", target);
+        log_write(g_log_ctx, LOG_ERROR, "Target is not a block device: %s", target);
         return -1;
     }
     
     if (mode == MODE_WIPE) {
         if (isdigit(target[strlen(target) - 1])) {
             fprintf(stderr, "Error: Target must be a device (e.g., /dev/sdb), not a partition\n");
+            log_write(g_log_ctx, LOG_ERROR, "Wipe mode requires a device, not partition: %s", target);
             return -1;
         }
     } else if (mode == MODE_PARTITION) {
         if (!isdigit(target[strlen(target) - 1])) {
             fprintf(stderr, "Error: Target must be a partition (e.g., /dev/sdb1), not a device\n");
+            log_write(g_log_ctx, LOG_ERROR, "Partition mode requires a partition, not device: %s", target);
             return -1;
         }
     }
@@ -151,6 +161,7 @@ int unmount_device(const char *device) {
     pipe = popen(command, "r");
     
     if (pipe == NULL) {
+        log_write(g_log_ctx, LOG_ERROR, "Failed to check mount status for: %s", device);
         return -1;
     }
     
@@ -177,12 +188,14 @@ int unmount_device(const char *device) {
             }
             
             printf("Unmounting %s from %s...\n", device_name, mount_point);
+            log_write(g_log_ctx, LOG_INFO, "Unmounting %s from %s", device_name, mount_point);
             
             snprintf(umount_cmd, sizeof(umount_cmd), "umount '%s' 2>/dev/null", mount_point);
             if (run_command(umount_cmd) != 0) {
                 snprintf(umount_cmd, sizeof(umount_cmd), "umount -l '%s' 2>/dev/null", mount_point);
                 if (run_command(umount_cmd) != 0) {
                     fprintf(stderr, "Warning: Failed to unmount %s\n", mount_point);
+                    log_write(g_log_ctx, LOG_ERROR, "Failed to unmount: %s", mount_point);
                     pclose(pipe);
                     return -1;
                 }
@@ -229,6 +242,8 @@ int check_fat32_limitation(const char *source_mountpoint, FilesystemType *fs_typ
             }
         } else if (S_ISREG(st.st_mode)) {
             if (st.st_size > FAT32_MAX_FILESIZE) {
+                log_write(g_log_ctx, LOG_WARNING, "Large file detected (>4GB): %s (%llu bytes)", 
+                          full_path, (unsigned long long)st.st_size);
                 closedir(dir);
                 *fs_type = FS_NTFS;
                 return 1;
@@ -253,6 +268,9 @@ int check_free_space(const char *source_mountpoint, const char *target_mountpoin
         fprintf(stderr, "Error: Not enough space on target partition\n");
         fprintf(stderr, "       Required: %llu bytes\n", needed_space);
         fprintf(stderr, "       Available: %llu bytes\n", free_space);
+        log_write(g_log_ctx, LOG_ERROR, "Insufficient space on target partition");
+        log_write(g_log_ctx, LOG_ERROR, "Required: %llu MB, Available: %llu MB", 
+                  needed_space / (1024 * 1024), free_space / (1024 * 1024));
         return -1;
     }
     

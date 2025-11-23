@@ -42,18 +42,21 @@ int copy_file(const char *source, const char *target) {
     
     if (stat(source, &st) != 0) {
         fprintf(stderr, "\nError: Cannot stat source file: %s\n", source);
+        log_write(g_log_ctx, LOG_ERROR, "Cannot stat source file: %s", source);
         return -1;
     }
     
     src_file = fopen(source, "rb");
     if (src_file == NULL) {
         fprintf(stderr, "\nError: Failed to open source file: %s (%s)\n", source, strerror(errno));
+        log_write(g_log_ctx, LOG_ERROR, "Failed to open source file: %s (%s)", source, strerror(errno));
         return -1;
     }
     
     dst_file = fopen(target, "wb");
     if (dst_file == NULL) {
         fprintf(stderr, "\nError: Failed to create target file: %s (%s)\n", target, strerror(errno));
+        log_write(g_log_ctx, LOG_ERROR, "Failed to create target file: %s (%s)", target, strerror(errno));
         fclose(src_file);
         return -1;
     }
@@ -61,6 +64,7 @@ int copy_file(const char *source, const char *target) {
     buffer = (unsigned char *)malloc(BUFFER_SIZE);
     if (buffer == NULL) {
         fprintf(stderr, "\nError: Memory allocation failed\n");
+        log_write(g_log_ctx, LOG_ERROR, "Memory allocation failed for copy buffer");
         fclose(src_file);
         fclose(dst_file);
         return -1;
@@ -71,6 +75,8 @@ int copy_file(const char *source, const char *target) {
         if (bytes_written != bytes_read) {
             fprintf(stderr, "\nError: Write failed for: %s (wrote %zu of %zu bytes) - %s\n", 
                     target, bytes_written, bytes_read, strerror(errno));
+            log_write(g_log_ctx, LOG_ERROR, "Write failed for: %s (wrote %zu of %zu bytes)", 
+                      target, bytes_written, bytes_read);
             result = -1;
             break;
         }
@@ -85,6 +91,7 @@ int copy_file(const char *source, const char *target) {
     
     if (ferror(src_file)) {
         fprintf(stderr, "\nError: Read error for: %s - %s\n", source, strerror(errno));
+        log_write(g_log_ctx, LOG_ERROR, "Read error for: %s", source);
         result = -1;
     }
     
@@ -92,11 +99,13 @@ int copy_file(const char *source, const char *target) {
     
     if (fflush(dst_file) != 0) {
         fprintf(stderr, "\nError: Failed to flush file: %s - %s\n", target, strerror(errno));
+        log_write(g_log_ctx, LOG_ERROR, "Failed to flush file: %s", target);
         result = -1;
     }
     
     if (fsync(fileno(dst_file)) != 0) {
         fprintf(stderr, "\nWarning: Failed to sync file: %s - %s\n", target, strerror(errno));
+        log_write(g_log_ctx, LOG_WARNING, "Failed to sync file: %s", target);
     }
     
     fclose(src_file);
@@ -127,12 +136,14 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
     dir = opendir(source);
     if (dir == NULL) {
         fprintf(stderr, "\nError: Failed to open directory: %s - %s\n", source, strerror(errno));
+        log_write(g_log_ctx, LOG_ERROR, "Failed to open directory: %s", source);
         return -1;
     }
     
     if (!is_directory(target)) {
         if (make_directory(target) != 0) {
             fprintf(stderr, "\nError: Failed to create directory: %s - %s\n", target, strerror(errno));
+            log_write(g_log_ctx, LOG_ERROR, "Failed to create directory: %s", target);
             closedir(dir);
             return -1;
         }
@@ -148,6 +159,7 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
         
         if (lstat(source_path, &st) != 0) {
             fprintf(stderr, "\nWarning: Cannot stat: %s - %s\n", source_path, strerror(errno));
+            log_write(g_log_ctx, LOG_WARNING, "Cannot stat: %s", source_path);
             continue;
         }
         
@@ -190,18 +202,22 @@ int copy_filesystem_files(const char *source, const char *target, int verbose) {
     
     if (total_size == 0) {
         fprintf(stderr, "Error: Source directory appears to be empty\n");
+        log_write(g_log_ctx, LOG_ERROR, "Source directory appears to be empty");
         return -1;
     }
     
     printf("Total size to copy: %llu MB\n", total_size / (1024 * 1024));
+    log_write(g_log_ctx, LOG_INFO, "Total size to copy: %llu MB", total_size / (1024 * 1024));
     
     if (copy_directory_recursive(source, target, verbose) != 0) {
         fprintf(stderr, "\nError: File copy failed\n");
+        log_write(g_log_ctx, LOG_ERROR, "File copy operation failed");
         return -1;
     }
     
     printf("\n");
     print_colored("File copy complete", "green");
+    log_write(g_log_ctx, LOG_SUCCESS, "File copy completed - %llu MB copied", total_copied / (1024 * 1024));
     
     return 0;
 }

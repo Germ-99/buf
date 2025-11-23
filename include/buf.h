@@ -14,20 +14,29 @@
 #include <sys/statvfs.h>
 #include <ctype.h>
 #include <signal.h>
+#include <pwd.h>
 
 #define VERSION "1.0.0"
 #define APP_NAME "buf"
 #define DEFAULT_FS_LABEL "BOOTABLE USB"
-#define MAX_PATH 4096 // Max path length for linux filesystems... sigh
+#define MAX_PATH 4096
 #define MAX_DEVICES 64
-#define BUFFER_SIZE (5 * 1024 * 1024) // 5MB buffer for IO crap
-#define FAT32_MAX_FILESIZE 4294967295ULL // 4GB - 1 byte, maximum size for FAT32
+#define BUFFER_SIZE (5 * 1024 * 1024)
+#define FAT32_MAX_FILESIZE 4294967295ULL
 
 typedef enum {
     MODE_NONE,
     MODE_WIPE,
     MODE_PARTITION
 } InstallMode;
+
+typedef enum {
+    LOG_INFO,
+    LOG_SUCCESS,
+    LOG_WARNING,
+    LOG_ERROR,
+    LOG_STEP
+} LogLevel;
 
 typedef enum {
     FS_FAT,
@@ -50,6 +59,7 @@ typedef struct {
     FilesystemType filesystem;
     char label[256];
     int verbose;
+    int no_log;
     ISOType iso_type;
 } Config;
 
@@ -58,6 +68,15 @@ typedef struct {
     char target_mountpoint[MAX_PATH];
     char temp_directory[MAX_PATH];
 } MountPoints;
+
+typedef struct {
+    FILE *file;
+    char filepath[MAX_PATH];
+    int enabled;
+    time_t start_time;
+    int error_count;
+    int warning_count;
+} LogContext;
 
 int check_root_privileges(void);
 int parse_arguments(int argc, char *argv[], Config *config);
@@ -109,5 +128,15 @@ int is_block_device(const char *path);
 int is_directory(const char *path);
 int make_directory(const char *path);
 void make_system_realize_partition_changed(const char *device);
+
+int log_init(LogContext *ctx, const char *home_dir);
+void log_close(LogContext *ctx, int success);
+void log_write(LogContext *ctx, LogLevel level, const char *format, ...);
+void log_section(LogContext *ctx, const char *section_name);
+void log_system_info(LogContext *ctx);
+void log_config(LogContext *ctx, Config *config);
+void log_command(LogContext *ctx, const char *command, int result);
+
+extern LogContext *g_log_ctx;
 
 #endif

@@ -5,24 +5,29 @@ int wipe_device(const char *device) {
     char output[1024];
     
     print_colored("Wiping device signatures...", "green");
+    log_write(g_log_ctx, LOG_STEP, "Wiping device signatures from: %s", device);
     
     snprintf(command, sizeof(command), "wipefs --all '%s' 2>/dev/null", device);
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: Failed to wipe device\n");
+        log_write(g_log_ctx, LOG_ERROR, "wipefs command failed");
         return -1;
     }
     
     print_colored("Verifying device is clean...", "");
+    log_write(g_log_ctx, LOG_INFO, "Verifying device is clean");
     
     snprintf(command, sizeof(command), "lsblk --pairs --output NAME,TYPE '%s' | grep -c 'TYPE=\"part\"'", device);
     if (run_command_with_output(command, output, sizeof(output)) == 0) {
         if (atoi(trim_whitespace(output)) != 0) {
             fprintf(stderr, "Error: Device still has partitions after wiping\n");
             fprintf(stderr, "       Device may be write-protected\n");
+            log_write(g_log_ctx, LOG_ERROR, "Device still has partitions after wiping - may be write-protected");
             return -1;
         }
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "Device wiped successfully");
     return 0;
 }
 
@@ -30,13 +35,16 @@ int create_partition_table(const char *device) {
     char command[MAX_PATH];
     
     print_colored("Creating partition table...", "green");
+    log_write(g_log_ctx, LOG_STEP, "Creating MSDOS partition table on: %s", device);
     
     snprintf(command, sizeof(command), "parted --script '%s' mklabel msdos 2>/dev/null", device);
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: Failed to create partition table\n");
+        log_write(g_log_ctx, LOG_ERROR, "parted mklabel command failed");
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "Partition table created");
     return 0;
 }
 
@@ -47,6 +55,7 @@ int create_partition(const char *device, const char *partition,
     char mkfs_cmd[256];
     
     print_colored("Creating partition...", "green");
+    log_write(g_log_ctx, LOG_STEP, "Creating %s partition: %s", fs_name, partition);
     
     if (fs_type == FS_FAT) {
         snprintf(command, sizeof(command), 
@@ -60,12 +69,16 @@ int create_partition(const char *device, const char *partition,
     
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: Failed to create partition\n");
+        log_write(g_log_ctx, LOG_ERROR, "parted mkpart command failed");
         return -1;
     }
+    
+    log_write(g_log_ctx, LOG_SUCCESS, "Partition created");
     
     make_system_realize_partition_changed(device);
     
     print_colored("Formatting partition...", "green");
+    log_write(g_log_ctx, LOG_STEP, "Formatting partition as %s", fs_name);
     
     if (fs_type == FS_FAT) {
         snprintf(mkfs_cmd, sizeof(mkfs_cmd), "which mkdosfs >/dev/null 2>&1");
@@ -82,9 +95,11 @@ int create_partition(const char *device, const char *partition,
     
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: Failed to format partition\n");
+        log_write(g_log_ctx, LOG_ERROR, "Filesystem creation failed");
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "Partition formatted as %s", fs_name);
     return 0;
 }
 
@@ -92,6 +107,7 @@ int create_uefi_ntfs_partition(const char *device) {
     char command[MAX_PATH];
     
     print_colored("Creating UEFI:NTFS support partition...", "");
+    log_write(g_log_ctx, LOG_STEP, "Creating UEFI:NTFS partition on: %s", device);
     
     snprintf(command, sizeof(command), 
             "parted --align none --script '%s' mkpart primary fat16 -- -2048s -1s 2>/dev/null", 
@@ -99,11 +115,13 @@ int create_uefi_ntfs_partition(const char *device) {
     
     if (run_command(command) != 0) {
         fprintf(stderr, "Warning: Failed to create UEFI:NTFS partition\n");
+        log_write(g_log_ctx, LOG_WARNING, "Failed to create UEFI:NTFS partition");
         return -1;
     }
     
     make_system_realize_partition_changed(device);
     
+    log_write(g_log_ctx, LOG_SUCCESS, "UEFI:NTFS partition created");
     return 0;
 }
 
@@ -112,6 +130,7 @@ int install_uefi_ntfs(const char *partition, const char *temp_dir) {
     char image_path[MAX_PATH];
     
     print_colored("Installing UEFI:NTFS support...", "");
+    log_write(g_log_ctx, LOG_STEP, "Downloading UEFI:NTFS image");
     
     snprintf(image_path, sizeof(image_path), "%s/uefi-ntfs.img", temp_dir);
     
@@ -121,14 +140,20 @@ int install_uefi_ntfs(const char *partition, const char *temp_dir) {
     
     if (run_command(command) != 0) {
         print_colored("Warning: Failed to download UEFI:NTFS image", "yellow");
+        log_write(g_log_ctx, LOG_WARNING, "Failed to download UEFI:NTFS image from GitHub");
         return -1;
     }
+    
+    log_write(g_log_ctx, LOG_SUCCESS, "UEFI:NTFS image downloaded");
+    log_write(g_log_ctx, LOG_STEP, "Writing UEFI:NTFS image to partition: %s", partition);
     
     snprintf(command, sizeof(command), "dd if='%s' of='%s' bs=1M 2>/dev/null", image_path, partition);
     if (run_command(command) != 0) {
         fprintf(stderr, "Warning: Failed to write UEFI:NTFS image\n");
+        log_write(g_log_ctx, LOG_WARNING, "Failed to write UEFI:NTFS image with dd");
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "UEFI:NTFS image written successfully");
     return 0;
 }

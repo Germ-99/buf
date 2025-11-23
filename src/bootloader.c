@@ -4,22 +4,28 @@ int install_grub(const char *target_mountpoint, const char *target_device) {
     char command[MAX_PATH];
     char grub_cmd[256];
     
+    log_write(g_log_ctx, LOG_STEP, "Installing GRUB to: %s", target_device);
+    
     snprintf(grub_cmd, sizeof(grub_cmd), "which grub-install >/dev/null 2>&1");
     if (run_command(grub_cmd) == 0) {
         snprintf(command, sizeof(command), 
                 "grub-install --target=i386-pc --boot-directory='%s' --force '%s' 2>/dev/null", 
                 target_mountpoint, target_device);
+        log_write(g_log_ctx, LOG_INFO, "Using grub-install command");
     } else {
         snprintf(command, sizeof(command), 
                 "grub2-install --target=i386-pc --boot-directory='%s' --force '%s' 2>/dev/null", 
                 target_mountpoint, target_device);
+        log_write(g_log_ctx, LOG_INFO, "Using grub2-install command");
     }
     
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: GRUB installation failed\n");
+        log_write(g_log_ctx, LOG_ERROR, "GRUB installation command failed");
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "GRUB installed successfully");
     return 0;
 }
 
@@ -29,23 +35,30 @@ int install_grub_config(const char *target_mountpoint) {
     FILE *cfg_file;
     char test_cmd[MAX_PATH];
     
+    log_write(g_log_ctx, LOG_STEP, "Creating GRUB configuration");
+    
     snprintf(test_cmd, sizeof(test_cmd), "which grub-install >/dev/null 2>&1");
     if (run_command(test_cmd) == 0) {
         snprintf(grub_dir, sizeof(grub_dir), "%s/grub", target_mountpoint);
+        log_write(g_log_ctx, LOG_INFO, "Using grub directory");
     } else {
         snprintf(grub_dir, sizeof(grub_dir), "%s/grub2", target_mountpoint);
+        log_write(g_log_ctx, LOG_INFO, "Using grub2 directory");
     }
     
     if (make_directory(grub_dir) != 0) {
         fprintf(stderr, "Error: Failed to create GRUB directory\n");
+        log_write(g_log_ctx, LOG_ERROR, "Failed to create GRUB directory: %s", grub_dir);
         return -1;
     }
     
     snprintf(grub_cfg_path, sizeof(grub_cfg_path), "%s/grub.cfg", grub_dir);
+    log_write(g_log_ctx, LOG_INFO, "Creating GRUB config at: %s", grub_cfg_path);
     
     cfg_file = fopen(grub_cfg_path, "w");
     if (cfg_file == NULL) {
         fprintf(stderr, "Error: Failed to create GRUB config file\n");
+        log_write(g_log_ctx, LOG_ERROR, "Failed to create GRUB config file: %s", grub_cfg_path);
         return -1;
     }
     
@@ -54,6 +67,7 @@ int install_grub_config(const char *target_mountpoint) {
     
     fclose(cfg_file);
     
+    log_write(g_log_ctx, LOG_SUCCESS, "GRUB configuration created");
     return 0;
 }
 
@@ -68,20 +82,25 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     char buffer[1024];
     int is_win7 = 0;
     
+    log_write(g_log_ctx, LOG_INFO, "Checking for Windows 7 UEFI workaround requirement");
+    
     snprintf(cversion_path, sizeof(cversion_path), "%s/sources/cversion.ini", source_mountpoint);
     if (file_exists(cversion_path)) {
         snprintf(command, sizeof(command), "grep -E '^MinServer=7[0-9]{3}\\.[0-9]' '%s'", cversion_path);
         if (run_command(command) == 0) {
             is_win7 = 1;
+            log_write(g_log_ctx, LOG_INFO, "Detected Windows 7 installation media");
         }
     }
     
     snprintf(command, sizeof(command), "%s/bootmgr.efi", source_mountpoint);
     if (!file_exists(command) && !is_win7) {
+        log_write(g_log_ctx, LOG_INFO, "Windows 7 UEFI workaround not needed");
         return 0;
     }
     
     print_colored("Applying Windows 7 UEFI workaround...", "");
+    log_write(g_log_ctx, LOG_STEP, "Applying Windows 7 UEFI workaround");
     
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/efi' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
@@ -99,6 +118,8 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
         snprintf(efi_dir, sizeof(efi_dir), "%s/efi", target_mountpoint);
     }
     
+    log_write(g_log_ctx, LOG_INFO, "EFI directory: %s", efi_dir);
+    
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/boot' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
     
@@ -115,6 +136,8 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
         snprintf(efi_boot_dir, sizeof(efi_boot_dir), "%s/efi/boot", target_mountpoint);
     }
     
+    log_write(g_log_ctx, LOG_INFO, "EFI boot directory: %s", efi_boot_dir);
+    
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/efi/boot/boot*.efi' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
     
@@ -123,6 +146,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
         if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
             pclose(pipe);
             print_colored("Existing EFI bootloader found, skipping workaround", "");
+            log_write(g_log_ctx, LOG_INFO, "Existing EFI bootloader found, skipping workaround");
             return 0;
         }
         pclose(pipe);
@@ -130,11 +154,16 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     if (make_directory(efi_boot_dir) != 0) {
         fprintf(stderr, "Warning: Failed to create EFI boot directory\n");
+        log_write(g_log_ctx, LOG_WARNING, "Failed to create EFI boot directory: %s", efi_boot_dir);
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_INFO, "Created EFI boot directory");
+    
     snprintf(bootloader_path, sizeof(bootloader_path), "%s/bootx64.efi", efi_boot_dir);
     snprintf(sources_install, sizeof(sources_install), "%s/sources/install.wim", source_mountpoint);
+    
+    log_write(g_log_ctx, LOG_STEP, "Extracting EFI bootloader from install.wim");
     
     snprintf(command, sizeof(command), 
             "7z e -so '%s' Windows/Boot/EFI/bootmgfw.efi > '%s' 2>/dev/null", 
@@ -142,8 +171,10 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     if (run_command(command) != 0) {
         fprintf(stderr, "Warning: Failed to extract EFI bootloader\n");
+        log_write(g_log_ctx, LOG_WARNING, "Failed to extract EFI bootloader from install.wim");
         return -1;
     }
     
+    log_write(g_log_ctx, LOG_SUCCESS, "EFI bootloader extracted successfully: %s", bootloader_path);
     return 0;
 }
