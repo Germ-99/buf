@@ -136,6 +136,7 @@ void log_section(LogContext *ctx, const char *section_name);
 void log_system_info(LogContext *ctx);
 void log_config(LogContext *ctx, Config *config);
 void log_command(LogContext *ctx, const char *command, int result);
+void log_command_invocation(LogContext *ctx, int argc, char *argv[]);
 
 extern LogContext *g_log_ctx;
 

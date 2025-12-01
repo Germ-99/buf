@@ -273,6 +273,32 @@ void log_config(LogContext *ctx, Config *config) {
     fflush(ctx->file);
 }
 
+void log_command_invocation(LogContext *ctx, int argc, char *argv[]) {
+	int i;
+	char full_command[MAX_PATH * 2];
+	int offset = 0;
+
+	if (ctx == NULL || !ctx->enabled || ctx->file == NULL) {
+	}
+
+	full_command[0] = '\0';
+
+	for (i = 0; i < argc; i++) {
+		if (i > 0) {
+			offset += snprintf(full_command + offset, sizeof(full_command) - offset, " ");
+		}
+		offset += snprintf(full_command + offset, sizeof(full_command) - offset, "%s", argv[i]);
+
+		if (offset >= sizeof(full_command) - 1) {
+			break;
+		}
+	}
+
+	log_write(ctx, LOG_INFO, "Command invoked: %s", full_command);
+	fprintf(ctx->file, "\n");
+	fflush(ctx->file);
+}
+
 void log_command(LogContext *ctx, const char *command, int result) {
     if (ctx == NULL || !ctx->enabled || ctx->file == NULL) {
         return;

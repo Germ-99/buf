@@ -27,6 +27,7 @@ int main(int argc, char *argv[]) {
         if (log_init(&log_ctx, NULL) == 0) {
             g_log_ctx = &log_ctx;
             log_system_info(&log_ctx);
+	    log_command_invocation(&log_ctx, argc, argv);
         }
     }
 
