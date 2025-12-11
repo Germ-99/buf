@@ -1,9 +1,9 @@
 #include "../include/buf.h"
 
-static unsigned long long total_copied = 0;
-static unsigned long long total_size = 0;
-static time_t last_update = 0;
-static char current_file[MAX_PATH] = "";
+static unsigned long long total_copied = 0; // Bytes copied so far
+static unsigned long long total_size = 0;   // Total size to copy
+static time_t last_update = 0;              // Last time progress was displayed
+static char current_file[MAX_PATH] = "";    // Currently copying file (for display)
 
 void print_progress(int verbose) {
     time_t now = time(NULL);
@@ -11,6 +11,7 @@ void print_progress(int verbose) {
     unsigned long long copied_mb;
     unsigned long long total_mb;
     
+    // Throttle updates to once per-second when not using --verbose flag
     if (!verbose && (now - last_update) < 1) {
         return;
     }
@@ -18,6 +19,7 @@ void print_progress(int verbose) {
     last_update = now;
     
     if (total_size > 0) {
+        // Calculate and display progress %
         percent = (int)((total_copied * 100) / total_size);
         copied_mb = total_copied / (1024 * 1024);
         total_mb = total_size / (1024 * 1024);
@@ -40,6 +42,7 @@ int copy_file(const char *source, const char *target) {
     unsigned long long file_copied = 0;
     struct timespec times[2];
     
+    // Get source metadata
     if (stat(source, &st) != 0) {
         fprintf(stderr, "\nError: Cannot stat source file: %s\n", source);
         log_write(g_log_ctx, LOG_ERROR, "Cannot stat source file: %s", source);
@@ -61,6 +64,7 @@ int copy_file(const char *source, const char *target) {
         return -1;
     }
     
+    // Allocate the buffer
     buffer = (unsigned char *)malloc(BUFFER_SIZE);
     if (buffer == NULL) {
         fprintf(stderr, "\nError: Memory allocation failed\n");
@@ -70,6 +74,7 @@ int copy_file(const char *source, const char *target) {
         return -1;
     }
     
+    // Copy files in chunks using said buffer
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, src_file)) > 0) {
         bytes_written = fwrite(buffer, 1, bytes_read, dst_file);
         if (bytes_written != bytes_read) {
@@ -84,6 +89,7 @@ int copy_file(const char *source, const char *target) {
         total_copied += bytes_read;
         file_copied += bytes_read;
         
+        // Update progress display over periods (every 10MB or at file completion)
         if (file_copied % (10 * 1024 * 1024) == 0 || file_copied == (unsigned long long)st.st_size) {
             print_progress(0);
         }
@@ -103,6 +109,7 @@ int copy_file(const char *source, const char *target) {
         result = -1;
     }
     
+    // Force write to USB
     if (fsync(fileno(dst_file)) != 0) {
         fprintf(stderr, "\nWarning: Failed to sync file: %s - %s\n", target, strerror(errno));
         log_write(g_log_ctx, LOG_WARNING, "Failed to sync file: %s", target);
@@ -119,12 +126,15 @@ int copy_file(const char *source, const char *target) {
         utimensat(AT_FDCWD, target, times, 0);
         chmod(target, st.st_mode);
     } else {
+        // Remove incomplete file if we error out
         unlink(target);
     }
     
     return result;
 }
 
+// This is for subdirectories
+// (could we not just make copy_file do this?)
 int copy_directory_recursive(const char *source, const char *target, int verbose) {
     DIR *dir;
     struct dirent *entry;
@@ -140,6 +150,7 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
         return -1;
     }
     
+    // Create target directory if it doesn't already exist
     if (!is_directory(target)) {
         if (make_directory(target) != 0) {
             fprintf(stderr, "\nError: Failed to create directory: %s - %s\n", target, strerror(errno));
@@ -150,13 +161,16 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
     }
     
     while ((entry = readdir(dir)) != NULL) {
+        // Skip all . and .. entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
         
+        // Build full paths
         snprintf(source_path, sizeof(source_path), "%s/%s", source, entry->d_name);
         snprintf(target_path, sizeof(target_path), "%s/%s", target, entry->d_name);
         
+        // Get entry metadata
         if (lstat(source_path, &st) != 0) {
             fprintf(stderr, "\nWarning: Cannot stat: %s - %s\n", source_path, strerror(errno));
             log_write(g_log_ctx, LOG_WARNING, "Cannot stat: %s", source_path);
@@ -169,6 +183,7 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
                 return -1;
             }
         } else if (S_ISREG(st.st_mode)) {
+            // Truncate long file paths for display
             display_name = source_path;
             if (strlen(source_path) > 50) {
                 display_name = source_path + strlen(source_path) - 50;
@@ -196,6 +211,7 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
 }
 
 int copy_filesystem_files(const char *source, const char *target, int verbose) {
+    // Reset progress tracking
     total_copied = 0;
     total_size = get_directory_size(source);
     last_update = 0;

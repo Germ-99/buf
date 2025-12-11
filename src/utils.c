@@ -45,13 +45,17 @@ void print_version(void) {
 char *trim_whitespace(char *str) {
     char *end;
     
+    // Get rid of leading whitespace
     while(isspace((unsigned char)*str)) str++;
     
+    // All spaces?
     if(*str == 0) return str;
     
+    // Trim trailing whitespace
     end = str + strlen(str) - 1;
     while(end > str && isspace((unsigned char)*end)) end--;
     
+    // Null terminate after last non-space character
     *(end + 1) = '\0';
     
     return str;
@@ -83,15 +87,19 @@ int make_directory(const char *path) {
     char *p = NULL;
     size_t len;
     
+    // Copy path to temporary buffer
     snprintf(tmp, sizeof(tmp), "%s", path);
     len = strlen(tmp);
     
+    // Remove trailing slash if present
     if (tmp[len - 1] == '/') {
         tmp[len - 1] = 0;
     }
     
+    // Create each directory in the path
     for (p = tmp + 1; *p; p++) {
         if (*p == '/') {
+            // Temporarily null terminate to create parent directory
             *p = 0;
             if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
                 return -1;
@@ -100,6 +108,7 @@ int make_directory(const char *path) {
         }
     }
     
+    // Create final directory
     if (mkdir(tmp, 0755) != 0 && errno != EEXIST) {
         return -1;
     }
@@ -107,6 +116,8 @@ int make_directory(const char *path) {
     return 0;
 }
 
+// The sole purpose of this is to just execute shell commands
+// You're gonna see this everywhere
 int run_command(const char *command) {
     int ret = system(command);
     return WEXITSTATUS(ret);
@@ -128,6 +139,8 @@ int run_command_with_output(const char *command, char *output, size_t output_siz
     return 0;
 }
 
+// Calculate the total size of a directory and all its contents
+// Returns size in bytes
 unsigned long long get_directory_size(const char *path) {
     DIR *dir;
     struct dirent *entry;
@@ -139,7 +152,7 @@ unsigned long long get_directory_size(const char *path) {
     if (dir == NULL) {
         return 0;
     }
-    
+    // Skip . and ..
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -150,10 +163,12 @@ unsigned long long get_directory_size(const char *path) {
         if (lstat(full_path, &st) != 0) {
             continue;
         }
-        
+        // Process subdirectories
         if (S_ISDIR(st.st_mode)) {
             total += get_directory_size(full_path);
-        } else if (S_ISREG(st.st_mode)) {
+        }
+        // Add the file size 
+        else if (S_ISREG(st.st_mode)) {
             total += st.st_size;
         }
     }
@@ -162,6 +177,8 @@ unsigned long long get_directory_size(const char *path) {
     return total;
 }
 
+// Get free space on a filesystem
+// Get the free space in bytes
 unsigned long long get_free_space(const char *path) {
     struct statvfs st;
     
@@ -169,9 +186,11 @@ unsigned long long get_free_space(const char *path) {
         return 0;
     }
     
+    // Free space = available blocks * block size
     return (unsigned long long)st.f_bavail * st.f_bsize;
 }
 
+// Force the kernel to re-read partition table after modifying it
 void make_system_realize_partition_changed(const char *device) {
     char command[MAX_PATH];
     
@@ -200,6 +219,7 @@ int list_removable_devices(void) {
     printf("%-15s %-20s %-10s %-10s\n", "DEVICE", "MODEL", "SIZE", "TYPE");
     printf("================================================================\n");
     
+    // Find all USB/UAS connected disk devices
     snprintf(command, sizeof(command), 
              "lsblk -d -o NAME,TRAN,TYPE -n | awk '($2==\"usb\" || $2==\"uas\") && $3==\"disk\" {print $1}'");
     
@@ -209,6 +229,7 @@ int list_removable_devices(void) {
         return -1;
     }
     
+    // Allocate array to store device names
     devices = (char **)malloc(MAX_DEVICES * sizeof(char *));
     if (devices == NULL) {
         pclose(pipe);
@@ -216,6 +237,7 @@ int list_removable_devices(void) {
         return -1;
     }
     
+    // Read device names
     while (fgets(buffer, sizeof(buffer), pipe) != NULL && device_count < MAX_DEVICES) {
         buffer[strcspn(buffer, "\n")] = 0;
         devices[device_count] = strdup(buffer);
@@ -233,6 +255,8 @@ int list_removable_devices(void) {
     
     pclose(pipe);
     
+    // Couldn't find a device
+    // Should probably tell the user the purpose of this software
     if (device_count == 0) {
         printf("No removable devices found.\n");
         free(devices);
@@ -245,7 +269,8 @@ int list_removable_devices(void) {
         type[0] = '\0';
         
         snprintf(device_path, sizeof(device_path), "/dev/%s", devices[i]);
-        
+
+        // Get device size
         snprintf(cmd, sizeof(cmd), 
                  "lsblk -d -o SIZE -n '%s' 2>/dev/null", device_path);
         pipe = popen(cmd, "r");
@@ -258,6 +283,7 @@ int list_removable_devices(void) {
             pclose(pipe);
         }
         
+        // Get device model
         snprintf(cmd, sizeof(cmd), 
                  "lsblk -d -o MODEL -n '%s' 2>/dev/null", device_path);
         pipe = popen(cmd, "r");
@@ -270,6 +296,7 @@ int list_removable_devices(void) {
             pclose(pipe);
         }
         
+        // Get transport type (usb/uas)
         snprintf(cmd, sizeof(cmd), 
                  "lsblk -d -o TRAN -n '%s' 2>/dev/null", device_path);
         pipe = popen(cmd, "r");
@@ -281,6 +308,7 @@ int list_removable_devices(void) {
             pclose(pipe);
         }
         
+        // Use defaults if information not available
         if (strlen(model) == 0) {
             strncpy(model, "Unknown", sizeof(model) - 1);
         }

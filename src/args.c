@@ -2,10 +2,10 @@
 
 int parse_arguments(int argc, char *argv[], Config *config) {
     int i;
-    int has_mode = 0;
-    int mode_count = 0;
-    int has_source = 0;
-    int has_target = 0;
+    int has_mode = 0;   // Track if installation mode was specified 
+    int mode_count = 0; // Count number of modes specified (if this is over 1, we have an issue)
+    int has_source = 0; // Track if source was specified
+    int has_target = 0; // Track if target was specified
     
     if (argc < 2) {
         return -1;

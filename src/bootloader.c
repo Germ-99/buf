@@ -1,5 +1,8 @@
 #include "../include/buf.h"
 
+// This entire file is windows-specific crap
+// Using GRUB, just incase a user is on a BIOS-based system
+// By the way, if your computer is still running BIOS, why? 
 int install_grub(const char *target_mountpoint, const char *target_device) {
     char command[MAX_PATH];
     char grub_cmd[256];
@@ -8,11 +11,13 @@ int install_grub(const char *target_mountpoint, const char *target_device) {
     
     snprintf(grub_cmd, sizeof(grub_cmd), "which grub-install >/dev/null 2>&1");
     if (run_command(grub_cmd) == 0) {
+        // Use grub-install if available
         snprintf(command, sizeof(command), 
                 "grub-install --target=i386-pc --boot-directory='%s' --force '%s' 2>/dev/null", 
                 target_mountpoint, target_device);
         log_write(g_log_ctx, LOG_INFO, "Using grub-install command");
     } else {
+        // Fall back to grub2 if grub-install fails
         snprintf(command, sizeof(command), 
                 "grub2-install --target=i386-pc --boot-directory='%s' --force '%s' 2>/dev/null", 
                 target_mountpoint, target_device);
@@ -29,6 +34,7 @@ int install_grub(const char *target_mountpoint, const char *target_device) {
     return 0;
 }
 
+// Create a very basic GRUB config that chains to windows bootmgr
 int install_grub_config(const char *target_mountpoint) {
     char grub_cfg_path[MAX_PATH];
     char grub_dir[MAX_PATH];
@@ -37,6 +43,7 @@ int install_grub_config(const char *target_mountpoint) {
     
     log_write(g_log_ctx, LOG_STEP, "Creating GRUB configuration");
     
+    // Determine the GRUB dir name (grub vs grub2)
     snprintf(test_cmd, sizeof(test_cmd), "which grub-install >/dev/null 2>&1");
     if (run_command(test_cmd) == 0) {
         snprintf(grub_dir, sizeof(grub_dir), "%s/grub", target_mountpoint);
@@ -55,6 +62,7 @@ int install_grub_config(const char *target_mountpoint) {
     snprintf(grub_cfg_path, sizeof(grub_cfg_path), "%s/grub.cfg", grub_dir);
     log_write(g_log_ctx, LOG_INFO, "Creating GRUB config at: %s", grub_cfg_path);
     
+    // Create and write the GRUB config
     cfg_file = fopen(grub_cfg_path, "w");
     if (cfg_file == NULL) {
         fprintf(stderr, "Error: Failed to create GRUB config file\n");
@@ -62,8 +70,8 @@ int install_grub_config(const char *target_mountpoint) {
         return -1;
     }
     
-    fprintf(cfg_file, "ntldr /bootmgr\n");
-    fprintf(cfg_file, "boot\n");
+    fprintf(cfg_file, "ntldr /bootmgr\n"); // Load bootmgr as NTLDR
+    fprintf(cfg_file, "boot\n"); // Boot it
     
     fclose(cfg_file);
     
@@ -71,6 +79,8 @@ int install_grub_config(const char *target_mountpoint) {
     return 0;
 }
 
+// Windows 7 ISOs lack a proper UEFI bootloader, so we extract it from install.wim
+// This lets windows 7 boot on UEFI systems
 int workaround_win7_uefi(const char *source_mountpoint, const char *target_mountpoint) {
     char command[MAX_PATH];
     char cversion_path[MAX_PATH];
@@ -84,8 +94,10 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     log_write(g_log_ctx, LOG_INFO, "Checking for Windows 7 UEFI workaround requirement");
     
+    // Check if this is windows 7 by looking at cversion.ini
     snprintf(cversion_path, sizeof(cversion_path), "%s/sources/cversion.ini", source_mountpoint);
     if (file_exists(cversion_path)) {
+        // Check for windows 7 version string (7xxx.x format)
         snprintf(command, sizeof(command), "grep -E '^MinServer=7[0-9]{3}\\.[0-9]' '%s'", cversion_path);
         if (run_command(command) == 0) {
             is_win7 = 1;
@@ -93,6 +105,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
         }
     }
     
+    // If bootmgr.efi doesn't exist, it's another indicator of windows 7
     snprintf(command, sizeof(command), "%s/bootmgr.efi", source_mountpoint);
     if (!file_exists(command) && !is_win7) {
         log_write(g_log_ctx, LOG_INFO, "Windows 7 UEFI workaround not needed");
@@ -102,6 +115,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     print_colored("Applying Windows 7 UEFI workaround...", "");
     log_write(g_log_ctx, LOG_STEP, "Applying Windows 7 UEFI workaround");
     
+    // Find EFI directory (case-insensitive)
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/efi' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
     
@@ -120,6 +134,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     log_write(g_log_ctx, LOG_INFO, "EFI directory: %s", efi_dir);
     
+    // Find EFI boot directory (case-insensitive)
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/boot' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
     
@@ -138,6 +153,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     log_write(g_log_ctx, LOG_INFO, "EFI boot directory: %s", efi_boot_dir);
     
+    // Check if EFI bootloader already exists. If so, skip this workaround
     snprintf(command, sizeof(command), "find '%s' -ipath '%s/efi/boot/boot*.efi' 2>/dev/null", 
             target_mountpoint, target_mountpoint);
     
@@ -152,6 +168,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
         pclose(pipe);
     }
     
+    // Create EFI boot directory
     if (make_directory(efi_boot_dir) != 0) {
         fprintf(stderr, "Warning: Failed to create EFI boot directory\n");
         log_write(g_log_ctx, LOG_WARNING, "Failed to create EFI boot directory: %s", efi_boot_dir);
@@ -165,6 +182,7 @@ int workaround_win7_uefi(const char *source_mountpoint, const char *target_mount
     
     log_write(g_log_ctx, LOG_STEP, "Extracting EFI bootloader from install.wim");
     
+    // Extract bootmgfw.efi from install.wim and rename to bootx64.efi
     snprintf(command, sizeof(command), 
             "7z e -so '%s' Windows/Boot/EFI/bootmgfw.efi > '%s' 2>/dev/null", 
             sources_install, bootloader_path);

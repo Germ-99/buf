@@ -1,6 +1,8 @@
 #ifndef BUF_H
 #define BUF_H
 
+// NOTE: If your IDE is giving you "AT_FDCWD is undefined" errors, do NOT include fcntl. That header is already included in sys/mount.h
+// You will get compilation errors.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,11 +20,11 @@
 
 #define VERSION "1.0.0"
 #define APP_NAME "buf"
-#define DEFAULT_FS_LABEL "BOOTABLE USB"
-#define MAX_PATH 4096
-#define MAX_DEVICES 64
-#define BUFFER_SIZE (5 * 1024 * 1024)
-#define FAT32_MAX_FILESIZE 4294967295ULL
+#define DEFAULT_FS_LABEL "BOOTABLE USB" // Default label buf gives the USB after flashing (can be changed via --label flag)
+#define MAX_PATH 4096 // Max path for file operations
+#define MAX_DEVICES 64 // Max number of devices that will be listed when using --list flag
+#define BUFFER_SIZE (32 * 1024 * 1024) // 32MB buffer for copy operations
+#define FAT32_MAX_FILESIZE 4294967295ULL // FAT32 has a maximum file size of 4GB - 1 byte
 
 typedef enum {
     MODE_NONE,

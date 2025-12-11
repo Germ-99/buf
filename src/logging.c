@@ -1,6 +1,7 @@
 #include "../include/buf.h"
 #include <stdarg.h>
 
+// Global logging context pointer. Allows logging from any source file
 LogContext *g_log_ctx = NULL;
 
 static const char *get_level_string(LogLevel level) {
@@ -33,16 +34,19 @@ static const char *get_home_directory(void) {
         }
     }
     
+    // Avoid that dumb root directory
     home = getenv("HOME");
     if (home != NULL && strcmp(home, "/root") != 0) {
         return home;
     }
     
+    // Fall back to current user's home directory
     pw = getpwuid(getuid());
     if (pw != NULL && strcmp(pw->pw_dir, "/root") != 0) {
         return pw->pw_dir;
     }
     
+    // Last resort is to just use /tmp if all else fails
     return "/tmp";
 }
 
@@ -171,6 +175,7 @@ void log_write(LogContext *ctx, LogLevel level, const char *format, ...) {
     fflush(ctx->file);
 }
 
+// Write a section header to organize the log file and make it fancy
 void log_section(LogContext *ctx, const char *section_name) {
     if (ctx == NULL || !ctx->enabled || ctx->file == NULL) {
         return;
@@ -183,6 +188,8 @@ void log_section(LogContext *ctx, const char *section_name) {
     fflush(ctx->file);
 }
 
+// Log info such as kernel, distribution, user, etc.
+// Easier to debug, aren't I a genius?
 void log_system_info(LogContext *ctx) {
     char buffer[1024];
     FILE *pipe;
@@ -193,6 +200,7 @@ void log_system_info(LogContext *ctx) {
     
     log_section(ctx, "SYSTEM INFORMATION");
     
+    // Kernel information
     pipe = popen("uname -a 2>/dev/null", "r");
     if (pipe != NULL) {
         if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
@@ -202,6 +210,7 @@ void log_system_info(LogContext *ctx) {
         pclose(pipe);
     }
     
+    // Distribution information
     pipe = popen("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"'", "r");
     if (pipe != NULL) {
         if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
@@ -211,6 +220,7 @@ void log_system_info(LogContext *ctx) {
         pclose(pipe);
     }
     
+    // Current user
     pipe = popen("whoami 2>/dev/null", "r");
     if (pipe != NULL) {
         if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
@@ -224,6 +234,8 @@ void log_system_info(LogContext *ctx) {
     fflush(ctx->file);
 }
 
+// Log the current config settings
+// All user-selected options and detected parameters
 void log_config(LogContext *ctx, Config *config) {
     const char *mode_str;
     const char *fs_str;
@@ -283,6 +295,7 @@ void log_command_invocation(LogContext *ctx, int argc, char *argv[]) {
 
 	full_command[0] = '\0';
 
+    // Concatenate all arguments into a single string
 	for (i = 0; i < argc; i++) {
 		if (i > 0) {
 			offset += snprintf(full_command + offset, sizeof(full_command) - offset, " ");
@@ -299,6 +312,7 @@ void log_command_invocation(LogContext *ctx, int argc, char *argv[]) {
 	fflush(ctx->file);
 }
 
+// Log the command execution and it's result
 void log_command(LogContext *ctx, const char *command, int result) {
     if (ctx == NULL || !ctx->enabled || ctx->file == NULL) {
         return;

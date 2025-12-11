@@ -1,5 +1,6 @@
 #include "../include/buf.h"
 
+// Wipe all filesystem signatures off a device
 int wipe_device(const char *device) {
     char command[MAX_PATH];
     char output[1024];
@@ -31,6 +32,7 @@ int wipe_device(const char *device) {
     return 0;
 }
 
+// Create MBR partition table on target device
 int create_partition_table(const char *device) {
     char command[MAX_PATH];
     
@@ -58,10 +60,12 @@ int create_partition(const char *device, const char *partition,
     log_write(g_log_ctx, LOG_STEP, "Creating %s partition: %s", fs_name, partition);
     
     if (fs_type == FS_FAT) {
+        // We're using FAT32, so use the entire disk (start at 4MiB for alignment, end at 100%)
         snprintf(command, sizeof(command), 
                 "parted --script '%s' mkpart primary %s 4MiB 100%% 2>/dev/null", 
                 device, fs_name);
     } else {
+        // We're using NTFS, leave 2MB at the end for UEFI:NTFS partition (start at 4MiB, and at -2049 sectors)
         snprintf(command, sizeof(command), 
                 "parted --script '%s' mkpart primary %s 4MiB -- -2049s 2>/dev/null", 
                 device, fs_name);
@@ -75,19 +79,25 @@ int create_partition(const char *device, const char *partition,
     
     log_write(g_log_ctx, LOG_SUCCESS, "Partition created");
     
+    // Force kernel to re-read partition table
     make_system_realize_partition_changed(device);
     
     print_colored("Formatting partition...", "green");
     log_write(g_log_ctx, LOG_STEP, "Formatting partition as %s", fs_name);
     
+    // Format partition based off the filesystem type
     if (fs_type == FS_FAT) {
+        // Check what is available for formatting FAT32
         snprintf(mkfs_cmd, sizeof(mkfs_cmd), "which mkdosfs >/dev/null 2>&1");
         if (run_command(mkfs_cmd) == 0) {
+            // Use mkdosfs if available
             snprintf(command, sizeof(command), "mkdosfs -F 32 '%s' 2>/dev/null", partition);
         } else {
+            // Fall back to mkfs.vfat
             snprintf(command, sizeof(command), "mkfs.vfat -F 32 '%s' 2>/dev/null", partition);
         }
     } else {
+        // Use quick format and set label, NTFS
         snprintf(command, sizeof(command), 
                 "mkntfs --quick --label '%s' '%s' 2>/dev/null", 
                 label, partition);
@@ -103,12 +113,16 @@ int create_partition(const char *device, const char *partition,
     return 0;
 }
 
+// Create a small UEFI:NTFS partition at the end of the device
+// This 1MB FAT16 partition will let UEFI systems boot from NTFS partitions
+// Only needed because UEFI firmware blows and cannot natively read NTFS
 int create_uefi_ntfs_partition(const char *device) {
     char command[MAX_PATH];
     
     print_colored("Creating UEFI:NTFS support partition...", "");
     log_write(g_log_ctx, LOG_STEP, "Creating UEFI:NTFS partition on: %s", device);
     
+    // Create the FAT16 partition at the end (last 2048 sectors = 1MB)
     snprintf(command, sizeof(command), 
             "parted --align none --script '%s' mkpart primary fat16 -- -2048s -1s 2>/dev/null", 
             device);
@@ -119,12 +133,15 @@ int create_uefi_ntfs_partition(const char *device) {
         return -1;
     }
     
+    // Tell that damn kernel to detect the new partition!
     make_system_realize_partition_changed(device);
     
     log_write(g_log_ctx, LOG_SUCCESS, "UEFI:NTFS partition created");
     return 0;
 }
 
+// Install UEFT:NTFS bootloader image to the FAT16 partition
+// Big ups to pbatard for making Rufus
 int install_uefi_ntfs(const char *partition, const char *temp_dir) {
     char command[MAX_PATH];
     char image_path[MAX_PATH];
@@ -147,6 +164,7 @@ int install_uefi_ntfs(const char *partition, const char *temp_dir) {
     log_write(g_log_ctx, LOG_SUCCESS, "UEFI:NTFS image downloaded");
     log_write(g_log_ctx, LOG_STEP, "Writing UEFI:NTFS image to partition: %s", partition);
     
+    // write bootloader image directly to partition
     snprintf(command, sizeof(command), "dd if='%s' of='%s' bs=1M 2>/dev/null", image_path, partition);
     if (run_command(command) != 0) {
         fprintf(stderr, "Warning: Failed to write UEFI:NTFS image\n");

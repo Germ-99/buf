@@ -2,6 +2,7 @@
 
 int check_dependencies(void) {
     const char *required_commands[] = {
+        // User needs these commands on their system for this to work
         "mount", "umount", "wipefs", "lsblk", "blockdev", 
         "df", "parted", "7z", NULL
     };
@@ -18,6 +19,7 @@ int check_dependencies(void) {
         }
     }
     
+    // Check for FAT stuff 
     snprintf(command, sizeof(command), "which mkdosfs >/dev/null 2>&1 || which mkfs.vfat >/dev/null 2>&1 || which mkfs.fat >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: FAT filesystem tools not found (install dosfstools)\n");
@@ -25,6 +27,7 @@ int check_dependencies(void) {
         missing = 1;
     }
     
+    // Check NTFS tools
     snprintf(command, sizeof(command), "which mkntfs >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: NTFS filesystem tools not found (install ntfs-3g)\n");
@@ -32,6 +35,7 @@ int check_dependencies(void) {
         missing = 1;
     }
     
+    // Check for GRUB (supports both grub and grub2 naming)
     snprintf(command, sizeof(command), "which grub-install >/dev/null 2>&1 || which grub2-install >/dev/null 2>&1");
     if (run_command(command) != 0) {
         fprintf(stderr, "Error: GRUB not found (install grub2 or grub-pc)\n");
@@ -51,6 +55,7 @@ int check_source_media(const char *source) {
         return -1;
     }
     
+    // If not a block device, must be a regular file (ISO)
     if (!is_block_device(source)) {
         if (stat(source, &st) != 0) {
             fprintf(stderr, "Error: Cannot access source media '%s'\n", source);
@@ -76,6 +81,7 @@ int check_target_media(const char *target, InstallMode mode) {
     }
     
     if (mode == MODE_WIPE) {
+        // Device names end with a letter, and partition names end with a digit
         if (isdigit(target[strlen(target) - 1])) {
             fprintf(stderr, "Error: Target must be a device (e.g., /dev/sdb), not a partition\n");
             log_write(g_log_ctx, LOG_ERROR, "Wipe mode requires a device, not partition: %s", target);
@@ -96,8 +102,10 @@ int determine_target_parameters(Config *config) {
     size_t len;
     
     if (config->mode == MODE_PARTITION) {
+        // Target is already a partition
         strncpy(config->target_partition, config->target, sizeof(config->target_partition) - 1);
         
+        // Remove trailing digits to rget device name
         strncpy(config->target_device, config->target, sizeof(config->target_device) - 1);
         len = strlen(config->target_device);
         while (len > 0 && isdigit(config->target_device[len - 1])) {
@@ -105,6 +113,7 @@ int determine_target_parameters(Config *config) {
             len--;
         }
     } else {
+        // Wipe mode: target is a device, partition will be device + "1"
         strncpy(config->target_device, config->target, sizeof(config->target_device) - 1);
         snprintf(config->target_partition, sizeof(config->target_partition), "%s1", config->target_device);
     }
@@ -145,10 +154,10 @@ int is_device_busy(const char *device) {
     
     snprintf(command, sizeof(command), "mount | grep -q '%s'", device);
     if (run_command(command) == 0) {
-        return 1;
+        return 1; //  Device is mounted
     }
     
-    return 0;
+    return 0; // Device is not busy
 }
 
 int unmount_device(const char *device) {
@@ -157,6 +166,7 @@ int unmount_device(const char *device) {
     char line[512];
     int unmounted = 0;
     
+    // Get all the mount points for this device
     snprintf(command, sizeof(command), "mount | grep '^%s'", device);
     pipe = popen(command, "r");
     
@@ -165,6 +175,7 @@ int unmount_device(const char *device) {
         return -1;
     }
     
+    // Get each mounted partition
     while (fgets(line, sizeof(line), pipe) != NULL) {
         char device_name[MAX_PATH];
         char mount_point[MAX_PATH];
@@ -190,8 +201,10 @@ int unmount_device(const char *device) {
             printf("Unmounting %s from %s...\n", device_name, mount_point);
             log_write(g_log_ctx, LOG_INFO, "Unmounting %s from %s", device_name, mount_point);
             
+            // Try a normal unmount first
             snprintf(umount_cmd, sizeof(umount_cmd), "umount '%s' 2>/dev/null", mount_point);
             if (run_command(umount_cmd) != 0) {
+                // If normal unmount fails, be lazy and try it the other way
                 snprintf(umount_cmd, sizeof(umount_cmd), "umount -l '%s' 2>/dev/null", mount_point);
                 if (run_command(umount_cmd) != 0) {
                     fprintf(stderr, "Warning: Failed to unmount %s\n", mount_point);
@@ -213,6 +226,7 @@ int unmount_device(const char *device) {
     return 0;
 }
 
+// Check if the source contains files larger than 4GB
 int check_fat32_limitation(const char *source_mountpoint, FilesystemType *fs_type) {
     DIR *dir;
     struct dirent *entry;
@@ -225,6 +239,7 @@ int check_fat32_limitation(const char *source_mountpoint, FilesystemType *fs_typ
     }
     
     while ((entry = readdir(dir)) != NULL) {
+        // Skip . and .. 
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -241,11 +256,12 @@ int check_fat32_limitation(const char *source_mountpoint, FilesystemType *fs_typ
                 return 1;
             }
         } else if (S_ISREG(st.st_mode)) {
+            // FAT32 max file size is 4GB - 1 byte
             if (st.st_size > FAT32_MAX_FILESIZE) {
                 log_write(g_log_ctx, LOG_WARNING, "Large file detected (>4GB): %s (%llu bytes)", 
                           full_path, (unsigned long long)st.st_size);
                 closedir(dir);
-                *fs_type = FS_NTFS;
+                *fs_type = FS_NTFS; // It's exceeded 4GB; switch to NTFS
                 return 1;
             }
         }
@@ -259,8 +275,9 @@ int check_free_space(const char *source_mountpoint, const char *target_mountpoin
                     const char *target_partition) {
     unsigned long long needed_space;
     unsigned long long free_space;
-    unsigned long long additional_space = 10 * 1024 * 1024;
+    unsigned long long additional_space = 10 * 1024 * 1024; // 10MB buffer for edge cases where copy might fail because of insufficient space
     
+    // Calculate space needed (source size + buffer)
     needed_space = get_directory_size(source_mountpoint) + additional_space;
     free_space = get_free_space(target_mountpoint);
     
