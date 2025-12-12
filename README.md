@@ -10,10 +10,19 @@ logo by my good friend [mia](https://github.com/marshmallow-mia). Go check her g
 This is only for Linux, (at the moment) adding windows support soon 
 
 # Installing
+If you are on Arch Linux, use an AUR helper like [yay](https://github.com/Jguer/yay) to install it
+```
+yay -S buf-cli
+```
+After installing, try running ``sudo buf -h`` in your terminal to test (NOTE: If it doesn't show up immediately, restart your shell.)
+
+
+**If you're NOT on Arch Linux**
 Run the following command:
 ```
 curl -fsSL https://raw.githubusercontent.com/Germ-99/buf/main/scripts/install.sh | bash
 ```
+However, please note that you do need [these dependencies](https://github.com/Germ-99/buf?tab=readme-ov-file#building) to install.
 
 # Building
 
