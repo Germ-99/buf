@@ -7,7 +7,7 @@ Is it Bryson's USB Flasher or Bootable USB Flasher?
 logo by my good friend [mia](https://github.com/marshmallow-mia). Go check her github out, she's cool :)
 
 **NOTE**:
-This is only for Linux, (at the moment) adding windows support soon :)
+This is only for Linux, (at the moment) adding windows support soon 
 
 # Installing
 Run the following command:
@@ -17,11 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/Germ-99/buf/main/scripts/install.sh
 
 # Building
 
-**The following dependencies are required for BUILDING:**
+**The following dependencies are required:**
 - gcc
 - make
-
-**The following dependencies are needed for RUNNING:**
 - mount/umount
 - wipefs
 - lsblk
