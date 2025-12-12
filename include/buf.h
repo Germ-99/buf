@@ -18,12 +18,12 @@
 #include <signal.h>
 #include <pwd.h>
 
-#define VERSION "1.5.0"
+#define VERSION "1.5.1"
 #define APP_NAME "buf"
 #define DEFAULT_FS_LABEL "BOOTABLE USB" // Default label buf gives the USB after flashing (can be changed via --label flag)
 #define MAX_PATH 4096 // Max path for file operations
 #define MAX_DEVICES 64 // Max number of devices that will be listed when using --list flag
-#define BUFFER_SIZE (32 * 1024 * 1024) // 32MB buffer for copy operations
+#define BUFFER_SIZE (5 * 1024 * 1024) // 5MB buffer for copy operations
 #define FAT32_MAX_FILESIZE 4294967295ULL // FAT32 has a maximum file size of 4GB - 1 byte
 
 typedef enum {
