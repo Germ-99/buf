@@ -1,4 +1,12 @@
+// https://stackoverflow.com/questions/10368305/how-to-test-posix-compatibility
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L 
+#endif
+
 #include "../include/buf.h"
+#include <sys/sendfile.h>
+
+#define BLOCK_SIZE (32 * 1024 * 1024) // 32MB block size
 
 static unsigned long long total_copied = 0; // Bytes copied so far
 static unsigned long long total_size = 0;   // Total size to copy
@@ -31,110 +39,202 @@ void print_progress(int verbose) {
     }
 }
 
-int copy_file(const char *source, const char *target) {
-    FILE *src_file;
-    FILE *dst_file;
-    unsigned char *buffer;
-    size_t bytes_read;
-    size_t bytes_written;
+// Try to copy using sendfile() - zero-copy kernel transfer.
+static int copy_file_sendfile(const char *source, const char *target) {
+    int src_fd, dst_fd;
+    struct stat st;
+    off_t offset = 0;
+    ssize_t bytes_sent;
+    
+    src_fd = open(source, O_RDONLY);
+    if (src_fd < 0) {
+        return -1;
+    }
+    
+    if (fstat(src_fd, &st) != 0) {
+        close(src_fd);
+        return -1;
+    }
+    
+    // Don't use sendfile for small files (overhead not worth it)
+    if (st.st_size < 1024 * 1024) {
+        close(src_fd);
+        return -1;
+    }
+    
+    dst_fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst_fd < 0) {
+        close(src_fd);
+        return -1;
+    }
+    
+    // Advise kernel about access pattern
+    posix_fadvise(src_fd, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
+    
+    while (offset < st.st_size) {
+        bytes_sent = sendfile(dst_fd, src_fd, &offset, st.st_size - offset);
+        if (bytes_sent <= 0) {
+            if (errno == EINTR) {
+                continue;  // Interrupted, retry
+            }
+            if (errno == EINVAL || errno == ENOSYS) {
+                // sendfile not supported for this file type
+                close(src_fd);
+                close(dst_fd);
+                return -1;
+            }
+            // Real error
+            log_write(g_log_ctx, LOG_ERROR, "sendfile failed: %s", strerror(errno));
+            close(src_fd);
+            close(dst_fd);
+            return -1;
+        }
+        
+        total_copied += bytes_sent;
+        print_progress(0);
+    }
+    
+    // Sync to disk
+    if (fsync(dst_fd) != 0) {
+        log_write(g_log_ctx, LOG_WARNING, "fsync failed for: %s", target);
+    }
+    
+    close(src_fd);
+    close(dst_fd);
+    
+    struct timespec times[2];
+    times[0].tv_sec = st.st_atime;
+    times[0].tv_nsec = 0;
+    times[1].tv_sec = st.st_mtime;
+    times[1].tv_nsec = 0;
+    utimensat(AT_FDCWD, target, times, 0);
+    
+    chmod(target, st.st_mode);
+    
+    return 0;
+}
+
+// Copy using aligned buffers
+// This is a fallback for when sendfile doesn't work
+static int copy_file_buffered(const char *source, const char *target) {
+    int src_fd, dst_fd;
+    char *buffer = NULL;
+    ssize_t bytes_read, bytes_written, total_written;
     struct stat st;
     int result = 0;
-    unsigned long long file_copied = 0;
-    struct timespec times[2];
     
-    // Get source metadata
-    if (stat(source, &st) != 0) {
-        fprintf(stderr, "\nError: Cannot stat source file: %s\n", source);
-        log_write(g_log_ctx, LOG_ERROR, "Cannot stat source file: %s", source);
+    src_fd = open(source, O_RDONLY);
+    if (src_fd < 0) {
+        log_write(g_log_ctx, LOG_ERROR, "Failed to open source: %s (%s)", 
+                  source, strerror(errno));
         return -1;
     }
     
-    src_file = fopen(source, "rb");
-    if (src_file == NULL) {
-        fprintf(stderr, "\nError: Failed to open source file: %s (%s)\n", source, strerror(errno));
-        log_write(g_log_ctx, LOG_ERROR, "Failed to open source file: %s (%s)", source, strerror(errno));
+    if (fstat(src_fd, &st) != 0) {
+        log_write(g_log_ctx, LOG_ERROR, "Failed to stat source: %s", source);
+        close(src_fd);
         return -1;
     }
     
-    dst_file = fopen(target, "wb");
-    if (dst_file == NULL) {
-        fprintf(stderr, "\nError: Failed to create target file: %s (%s)\n", target, strerror(errno));
-        log_write(g_log_ctx, LOG_ERROR, "Failed to create target file: %s (%s)", target, strerror(errno));
-        fclose(src_file);
+    dst_fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dst_fd < 0) {
+        log_write(g_log_ctx, LOG_ERROR, "Failed to open target: %s (%s)", 
+                  target, strerror(errno));
+        close(src_fd);
         return -1;
     }
     
-    // Allocate the buffer
-    buffer = (unsigned char *)malloc(BUFFER_SIZE);
-    if (buffer == NULL) {
-        fprintf(stderr, "\nError: Memory allocation failed\n");
-        log_write(g_log_ctx, LOG_ERROR, "Memory allocation failed for copy buffer");
-        fclose(src_file);
-        fclose(dst_file);
+    if (posix_memalign((void **)&buffer, 4096, BLOCK_SIZE) != 0) {
+        log_write(g_log_ctx, LOG_ERROR, "Memory allocation failed");
+        close(src_fd);
+        close(dst_fd);
         return -1;
     }
     
-    // Copy files in chunks using said buffer
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, src_file)) > 0) {
-        bytes_written = fwrite(buffer, 1, bytes_read, dst_file);
-        if (bytes_written != bytes_read) {
-            fprintf(stderr, "\nError: Write failed for: %s (wrote %zu of %zu bytes) - %s\n", 
-                    target, bytes_written, bytes_read, strerror(errno));
-            log_write(g_log_ctx, LOG_ERROR, "Write failed for: %s (wrote %zu of %zu bytes)", 
-                      target, bytes_written, bytes_read);
-            result = -1;
-            break;
+    // Advise kernel about our access patterns
+    posix_fadvise(src_fd, 0, st.st_size, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, 0, 0, POSIX_FADV_DONTNEED);  // Don't cache writes
+    
+    // Copy data in large blocks
+    while ((bytes_read = read(src_fd, buffer, BLOCK_SIZE)) > 0) {
+        total_written = 0;
+        
+        // Handle partial writes
+        while (total_written < bytes_read) {
+            bytes_written = write(dst_fd, buffer + total_written, 
+                                 bytes_read - total_written);
+            
+            if (bytes_written < 0) {
+                if (errno == EINTR) {
+                    continue;  // Interrupted, retry
+                }
+                log_write(g_log_ctx, LOG_ERROR, "Write failed: %s (%s)", 
+                          target, strerror(errno));
+                result = -1;
+                goto cleanup;
+            }
+            
+            total_written += bytes_written;
         }
         
         total_copied += bytes_read;
-        file_copied += bytes_read;
-        
-        // Update progress display over periods (every 10MB or at file completion)
-        if (file_copied % (10 * 1024 * 1024) == 0 || file_copied == (unsigned long long)st.st_size) {
-            print_progress(0);
-        }
+        print_progress(0);
     }
     
-    if (ferror(src_file)) {
-        fprintf(stderr, "\nError: Read error for: %s - %s\n", source, strerror(errno));
-        log_write(g_log_ctx, LOG_ERROR, "Read error for: %s", source);
+    if (bytes_read < 0) {
+        log_write(g_log_ctx, LOG_ERROR, "Read failed: %s (%s)", 
+                  source, strerror(errno));
         result = -1;
+        goto cleanup;
     }
     
+    // Force write to disk
+    if (fsync(dst_fd) != 0) {
+        log_write(g_log_ctx, LOG_WARNING, "fsync failed: %s", target);
+    }
+    
+cleanup:
     free(buffer);
-    
-    if (fflush(dst_file) != 0) {
-        fprintf(stderr, "\nError: Failed to flush file: %s - %s\n", target, strerror(errno));
-        log_write(g_log_ctx, LOG_ERROR, "Failed to flush file: %s", target);
-        result = -1;
-    }
-    
-    // Force write to USB
-    if (fsync(fileno(dst_file)) != 0) {
-        fprintf(stderr, "\nWarning: Failed to sync file: %s - %s\n", target, strerror(errno));
-        log_write(g_log_ctx, LOG_WARNING, "Failed to sync file: %s", target);
-    }
-    
-    fclose(src_file);
-    fclose(dst_file);
+    close(src_fd);
+    close(dst_fd);
     
     if (result == 0) {
+        struct timespec times[2];
         times[0].tv_sec = st.st_atime;
         times[0].tv_nsec = 0;
         times[1].tv_sec = st.st_mtime;
         times[1].tv_nsec = 0;
         utimensat(AT_FDCWD, target, times, 0);
+        
         chmod(target, st.st_mode);
-    } else {
-        // Remove incomplete file if we error out
+    } else {        // Remove incomplete file on error
         unlink(target);
     }
     
     return result;
 }
 
+int copy_file(const char *source, const char *target) {
+    const char *display_name;
+    
+    // Set current file for progress display
+    display_name = source;
+    if (strlen(source) > 50) {
+        display_name = source + strlen(source) - 50;
+    }
+    strncpy(current_file, display_name, sizeof(current_file) - 1);
+    current_file[sizeof(current_file) - 1] = '\0';
+    
+    // Try sendfile first
+    if (copy_file_sendfile(source, target) == 0) {
+        return 0;
+    }
+    
+    // Fall back to buffered copy
+    return copy_file_buffered(source, target);
+}
+
 // This is for subdirectories
-// (could we not just make copy_file do this?)
 int copy_directory_recursive(const char *source, const char *target, int verbose) {
     DIR *dir;
     struct dirent *entry;
@@ -204,6 +304,7 @@ int copy_directory_recursive(const char *source, const char *target, int verbose
             
             print_progress(verbose);
         }
+        // Skip symlinks, device files, etc.
     }
     
     closedir(dir);
