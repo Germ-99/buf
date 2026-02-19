@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -Iinclude
+CFLAGS = -O2 -Iinclude
 LDFLAGS = 
 
 TARGET = buf
